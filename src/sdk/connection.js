@@ -4,6 +4,7 @@
 const { fetch } = require('fetch-ponyfill')()
 const errors = require('./errors')
 const btoa = require('btoa')
+const axios = require('axios')
 
 const blacklistAttributes = [
   'after',
@@ -100,7 +101,7 @@ class Connection {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        // 'Content-Type': 'application/json',
+        'Content-Type': 'application/json',
 
         // TODO(jeffomatic): The Fetch API has inconsistent behavior between
         // browser implementations and polyfills.
@@ -113,18 +114,23 @@ class Connection {
         // For now, let's not send the UA string.
         //'User-Agent': 'chain-sdk-js/0.0'
       },
-      body: JSON.stringify(snakeBody)
+      // body: JSON.stringify(snakeBody),
+      data: {}
     }
 
     if (this.token) {
-      req.headers['Authorization'] = `Basic ${btoa(this.token)}`
+      // req.headers['Authorization'] = `Basic ${this.token}`
     }
 
     if (this.agent) {
       req.agent = this.agent
     }
+    req['url'] = this.baseUrl + path
 
-    return fetch(this.baseUrl + path, req).catch((err) => {
+    // let promise = axios(req)
+    // let promise2 = fetch(this.baseUrl + path, req)
+
+    return axios(req).catch((err) => {
       throw errors.create(
         errors.types.FETCH,
         'Fetch error: ' + err.toString(),
@@ -135,44 +141,33 @@ class Connection {
         return { status: 204 }
       }
 
-      return resp.json().catch(() => {
-        throw errors.create(
-          errors.types.JSON,
-          'Could not parse JSON response',
-          {response: resp, status: resp.status}
-        )
-      }).then((body) => {
-        if (resp.status / 100 == 2) {
-          return body
-        }
-
-        // Everything else is a status error.
-        let errType = null
-        if (resp.status == 401) {
-          errType = errors.types.UNAUTHORIZED
-        } else if (resp.status == 404) {
-          errType = errors.types.NOT_FOUND
-        } else if (resp.status / 100 == 4) {
-          errType = errors.types.BAD_REQUEST
-        } else {
-          errType = errors.types.SERVER
-        }
-
-        throw errors.create(
-          errType,
-          errors.formatErrMsg(body, null),
-          {
-            response: resp,
-            status: resp.status,
-            body: body,
-            requestId: null
-          }
-        )
-      }).then((body) => {
-        // After processing the response, convert snakecased field names to
-        // camelcase to match language conventions.
+      const body = resp.data
+      if (resp.status / 100 == 2) {
         return skipSnakeize? body : camelize(body)
-      })
+      }
+
+      // Everything else is a status error.
+      let errType = null
+      if (resp.status == 401) {
+        errType = errors.types.UNAUTHORIZED
+      } else if (resp.status == 404) {
+        errType = errors.types.NOT_FOUND
+      } else if (resp.status / 100 == 4) {
+        errType = errors.types.BAD_REQUEST
+      } else {
+        errType = errors.types.SERVER
+      }
+
+      throw errors.create(
+        errType,
+        errors.formatErrMsg(body, null),
+        {
+          response: resp,
+          status: resp.status,
+          body: body,
+          requestId: null
+        }
+      )
     })
   }
 }
